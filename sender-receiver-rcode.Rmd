@@ -1,0 +1,350 @@
+---
+title: "sender-receiver MA"
+author: "A L Pooley"
+date: "19/12/2021"
+output: html_document
+---
+
+# Loading packages
+
+```{r, echo=FALSE, message=FALSE}
+
+library(readxl)
+library(caret)
+library(e1071)
+library(metafor)
+library(meta)
+library(tidyverse)
+library(esc)
+library(auctestr)
+library(vcd)
+
+```
+
+
+# Reading in the data & organising 
+
+```{r}
+rankings <- read_excel("sender-receiver.xlsx")
+rankings
+
+rankings$See <- as.factor(rankings$See)
+rankings$Hear <- as.factor(rankings$Hear)
+rankings$Hear_judge <- as.factor(rankings$Hear_judge)
+rankings$Silent <- as.factor(rankings$Silent)
+rankings$Review <- as.factor(rankings$Review)
+```
+
+### Descriptive statistics
+```{r}
+summary(rankings)
+successes <- sum(rankings$HR * rankings$trials)
+round(successes, 0) # 520 
+sum(rankings$trials) # 1624
+
+binom.test(x = 520, n = 1624, p = 0.25, alternative = "greater")
+
+sum(rankings$`z-score`)
+stouffer_z(z_vec = rankings$`z-score`)
+```
+
+
+***
+
+# Model 1 - HR as outcome 
+
+Using the study hit rates (%) as the outcome. First, need to calculate the number of events as this is not contained in the dataset currently. Then using the 'escalc' function, need to create the appropriate effect sizes and SEs. 
+
+```{r}
+num <- rankings$HR * rankings$trials # calculating the number of events
+z <- escalc(measure = "PR", xi = num, ni = rankings$trials, vtype = "LS") # requires proportion of event occurring (xi) and sample size (ni)
+```
+
+Adding the num and escalc output to the dataset:
+
+```{r}
+# Adding calculated ES and SE to same dataset to run model 
+
+rankings$num <- num
+rankings$PR_yi <- z$yi
+rankings$PR_vi <- z$vi
+```
+
+
+## Creating the model 
+
+Adding the 5 factors as moderators, using REML and knha adjustment (this is an adjustment to the standard errors of the estimated coefficients as when fitting a mixed-effects model, $\tau^2$ is treated as a known constant and ignores the uncertainty of $\tau^2$. Hence, SEs of the parameter estimates are often too small and yielding test statistics too large and CIs that are not wide enough - knha helps counter this; Knapp & Hartung, 2003). 
+
+```{r}
+mod1 <- rma(measure = "PR", yi = PR_yi, vi = PR_vi, mods = ~ (See + Hear + Hear_judge + Silent + Review), slab = Study, method = "REML", knha = TRUE, data = rankings)
+```
+
+### Checking model outputs 
+
+```{r}
+summary(mod1) # Heterogeneous, model accounts for ~20% of variance. Moderators aren't close to being significant, but review is sig. on its own 
+funnel(mod1) # looks like outliers 
+forest(mod1)
+plot(mod1) # some influencers - Honorton 302 
+
+regtest(mod1) # asymmetric funnel plot 
+```
+
+### Model checks
+
+```{r, echo = FALSE}
+rstudent(mod1) # studentised residuals - all look okay 
+
+inf1 <- influence(mod1) 
+inf1$is.infl # non flagged but will remove Honorton 302 
+plot(inf1) # looks like Goulding and Honorton 302 are adding more heterogeneity and influence to the model but Honorton 302 is the most problematic 
+
+```
+
+Comments: 
+* model is sig. heterogenous 
+* accounts for small amount of heterogeneity in data ($R^2$ 19.49%)
+* moderators are non-sig 
+* looks like influencers: Goulding et al. and Honorton 302 
+
+### Model improvements (assessing influential points)
+
+Removing Honorton 302
+```{r, echo = FALSE}
+rankings_del_studies <- rankings
+rankings_del_studies <- rankings_del_studies[-10,] # removing study 10 first (Honorton 302)
+rankings_del_studies
+
+mod1_del <- rma(measure = "PR", yi = PR_yi, vi = PR_vi, mods = ~ (See + Hear + Hear_judge + Silent + Review), slab = Study, method = "REML", knha = TRUE, data = rankings_del_studies)
+
+summary(mod1_del) # Heterogeneity 0.05, R increased to 35%, I^2 dropped to 34%! Review more sig. and hear now sig at 10%. Moderators now sig. 
+funnel(mod1_del) # looks like outliers 
+forest(mod1_del)
+plot(mod1_del) # some influencers 
+
+regtest(mod1_del) # Now non-sig
+
+# Model checks 
+
+rstudent(mod1_del) # 
+
+inf1_del <- influence(mod1_del) 
+inf1_del$is.infl # None 
+plot(inf1_del) # Looks better , but Goulding et al. has a high weight and largest rstudent, too large for my liking shall remove and assess
+
+qqnorm(mod1_del)
+
+```
+
+Removing Goulding et al. 
+
+```{r echo = FALSE}
+rankings_del_studies <- rankings_del_studies[-8,]
+rankings_del_studies
+
+mod1_del <- rma(measure = "PR", yi = PR_yi, vi = PR_vi, mods = ~ (See + Hear + Hear_judge + Silent + Review), slab = Study, method = "REML", knha = TRUE, data = rankings_del_studies)
+
+summary(mod1_del) # Model fit better 
+funnel(mod1_del) 
+forest(mod1_del)
+plot(mod1_del)  
+
+regtest(mod1_del) # non-sig
+
+# Model checks 
+
+rstudent(mod1_del) # 
+
+inf1_del <- influence(mod1_del) 
+inf1_del$is.infl # Broughton & Alexander FT2 flagged
+plot(inf1_del) #
+
+qqnorm(mod1_del)
+```
+
+Removing Broughton & Alexander FT2
+
+```{r echo=FALSE}
+rankings_del_studies <- rankings_del_studies[-3,] # Broughton & Alexander FT2
+
+mod1_del <- rma(measure = "PR", yi = PR_yi, vi = PR_vi, mods = ~ (See + Hear + Hear_judge + Silent + Review), slab = Study, method = "REML", knha = TRUE, data = rankings_del_studies)
+
+summary(mod1_del) # Fit improved again 
+funnel(mod1_del)
+forest(mod1_del)
+plot(mod1_del)
+
+regtest(mod1_del) # Now non-sig
+
+# Model checks 
+
+rstudent(mod1_del) # 
+
+inf1_del <- influence(mod1_del) 
+inf1_del$is.infl # None 
+plot(inf1_del) 
+
+qqnorm(mod1_del)
+
+# End of adjustment # 
+```
+
+**Final model fit with Honorton 302, Goudling et al. and Broughton & Alexander FT2 removed.** 
+
+```{r}
+mod1_final <- mod1_del
+summary(mod1_final)
+plot(mod1_final)
+
+forest.rma(mod1_final, annotate = TRUE, header = TRUE, refline = 0.25, top = 1, efac = TRUE)
+funnel.rma(mod1_final)
+
+regtest.rma(mod1_final)
+```
+```{r}
+permres1 <- permutest(mod1_final, iter = 5000, retpermdist = TRUE)
+permres1 # Moderators are signicant, as is hear and review. 
+
+```
+
+
+## Comments on final model
+
+The final model, which has 38 studies, accounts for 90% of the heterogeneity in the data, and the unnaccounted variability is low at 4%. QE test for residual heterogeneity is non-significant (p = 0.50) abd tge test if moderators is significant at the 5% significance level (p = 0.008). Both Hear and Review predictors are significant at the 5% level (p = 0.03 and p = 0.02, respectively). These findings stand with a permuations test with 5000 iterations. 
+
+The studies removed were Honorton et al. (1990) - Series 302, Goulding et al. (2004) and Broughton & Alexander (1997) - FT2 series. The studies were removed in the order described. 
+
+***
+
+# Model 2 - approximated binomial model 
+
+This is treating hit rate as a mean, rather than the total number of hits and using the measure as mean difference. 
+
+Where: 
+
+    $N$ = number of trials 
+    $x_bar$ = study hit rate (%)
+    $\sigma = \sqrt(1/(N - 1) * (N * x_bar - N *  x_bar^2))$
+    
+    
+Using mean difference as the outcome for the escalc function:  
+
+```{r}
+rankings$x_bar <- rankings$HR 
+x_bar <- rankings$HR
+N <- rankings$trials
+rankings$N <- rankings$trials
+
+s2 <- 1/(N - 1) * (N * x_bar - N *  x_bar^2)
+rankings$sigma_x <- sqrt(s2)
+
+rankings <- escalc(measure = "MN", ni = N, sdi = sigma_x, mi = x_bar, data = rankings) # adding vi and yi to rankings dataset 
+```
+
+## Fitting the model 
+
+```{r}
+mod2 <- rma(measure = "MN", yi = yi, vi = vi, mods = ~ See + Hear + Hear_judge + Silent + Review, method = "REML", knha = TRUE, slab = Study, data = rankings)
+```
+
+### Checking model outputs 
+
+```{r}
+# Model output
+mod2 # Review sig at 10% level, R at 205%, a lot of unaccounted variability, QE test sig and moderators non sig. 
+plot(mod2)
+forest(mod2)
+funnel(mod2) # outliers 
+
+regtest(mod2) # Funnel plot is asymmetric, just 
+```
+
+### Model checks
+
+```{r echo = FALSE}
+rstudent(mod2) 
+
+inf2 <- influence(mod2) 
+inf2$is.infl # non flagged but Honorton 302 rstudent value is very high and an outlier on several other measures so will remove 
+plot(inf2) 
+```
+
+### Model improvements 
+
+Removing Honorton 302 
+
+```{r echo = FALSE}
+rankings_del_studies <- rankings # resetting dataset
+rankings_del_studies <- rankings_del_studies[-10,]
+mod2_del <- rma(measure = "MN", yi = yi, vi = vi, mods = ~ See + Hear + Hear_judge + Silent + Review, method = "REML", knha = TRUE, slab = Study, data = rankings_del_studies)
+
+summary(mod2_del) # Model no longer overall hetero, moderators are sig. Hear sig at 10% and Review sig at 5%. R^2 at 32%, unnaccounted var at 34% 
+funnel(mod2_del) # looks good
+forest(mod2_del)
+plot(mod2_del) # looks good 
+
+regtest(mod2_del) # non-sig
+
+# Model checks 
+
+rstudent(mod2_del) # 
+
+inf2_del <- influence(mod2_del) 
+inf2_del$is.infl # Goulding rstudent still too large for liking 
+plot(inf2_del) 
+
+```
+
+Removing Goulding et al. 
+
+```{r echo = FALSE}
+rankings_del_studies <- rankings_del_studies[-8,]
+mod2_del <- rma(measure = "MN", yi = yi, vi = vi, mods = ~ See + Hear + Hear_judge + Silent + Review, method = "REML", knha = TRUE, slab = Study, data = rankings_del_studies)
+
+summary(mod2_del) # R2 now at 54! Unnaccounted below 20%, non hetero and moderators sig 0.03. Review more sig (at 1%) and Hear still sig at 10% 
+funnel(mod2_del)
+regtest(mod2_del)
+
+rstudent(mod2_del)
+
+inf2_del <- influence(mod2_del) 
+inf2_del$is.infl # Broughton & Alexander FT2 flagged 
+plot(inf2_del) 
+```
+
+Removing Broughton and Alexander FT2
+
+```{r echo = FALSE}
+rankings_del_studies <- rankings_del_studies[-3,]
+mod2_del <- rma(measure = "MN", yi = yi, vi = vi, mods = ~ See + Hear + Hear_judge + Silent + Review, method = "REML", knha = TRUE, slab = Study, data = rankings_del_studies)
+
+summary(mod2_del) # R2 now at 99! Unnaccounted below 1%, non hetero and moderators sig 0.03. Review more sig and Hear sig  at 5%
+funnel(mod2_del)
+regtest(mod2_del)
+
+rstudent(mod2_del)
+
+inf2_del <- influence(mod2_del) 
+inf2_del$is.infl # None
+plot(inf2_del)
+```
+**Final model fit with Honorton 302, Goulding et al. and Broughton and Alexander FT2 removed** 
+
+```{r}
+mod2_final <- mod2_del <- rma(measure = "MN", yi = yi, vi = vi, mods = ~ See + Hear + Hear_judge + Silent + Review, method = "REML", knha = TRUE, slab = Study, data = rankings_del_studies)
+summary(mod2_final)
+qqnorm(mod2_final)
+
+forest.rma(mod2_final, annotate = TRUE, header = TRUE, refline = 0.25, top = 1)
+funnel.rma(mod2_final)
+regtest.rma(mod2_final)
+```
+```{r}
+permres2 <- permutest(mod2_final, iter = 5000, retpermdist = TRUE)
+permres2 # Moderators are signicant, as is hear and review. 
+
+```
+
+## Comments on final model 
+
+Show very similar results to the HR model. Model accounts for pretty much all of the heterogeneity in the data. The QE test is non-significant, moderators are significant (p = 0.007) and unnaccounted variability below 1%. Hear and Review are both significant at the 5% level (p = 0.04 and p = 0.02, respectively). These findings stand with the permutation test with 5000 iterations. 
