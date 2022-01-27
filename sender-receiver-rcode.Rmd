@@ -1,7 +1,7 @@
 ---
 title: "sender-receiver MA"
 author: "A L Pooley"
-date: "19/12/2021"
+date: "27/01/2022"
 output: html_document
 ---
 
@@ -348,3 +348,29 @@ permres2 # Moderators are signicant, as is hear and review.
 ## Comments on final model 
 
 Show very similar results to the HR model. Model accounts for pretty much all of the heterogeneity in the data. The QE test is non-significant, moderators are significant (p = 0.007) and unnaccounted variability below 1%. Hear and Review are both significant at the 5% level (p = 0.04 and p = 0.02, respectively). These findings stand with the permutation test with 5000 iterations. 
+
+### Trim and fill 
+
+```{r}
+### Trim and fill on models without moderators
+
+mod1_nomod <- rma(measure = "PR", yi = PR_yi, vi = PR_vi, slab = Study, method = "REML", knha = TRUE, data = rankings)
+trimfill(mod1_nomod)
+funnel(trimfill(mod1_nomod))
+mod1_nomod <- rma(measure = "PR", yi = PR_yi, vi = PR_vi, slab = Study, method = "REML", knha = TRUE, data = rankings_del_studies)
+trimfill(mod1_nomod)
+funnel(trimfill(mod1_nomod))
+
+mod2_nomod <- rma(measure = "MN", yi = yi, vi = vi, method = "REML", knha = TRUE, slab = Study, data = rankings)
+trimfill(mod2_nomod)
+funnel(trimfill(mod2_nomod))
+mod2_final <- rma(measure = "MN", yi = yi, vi = vi, method = "REML", knha = TRUE, slab = Study, data = rankings_del_studies)
+trimfill(mod2_nomod)
+funnel(trimfill(mod2_nomod))
+
+```
+
+
+
+
+
